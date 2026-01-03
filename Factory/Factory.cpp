@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip>
 #include <vector>
 #include <fstream>
 #include <string>
@@ -7,14 +8,16 @@
 
 using namespace std;
 
-using INT = unsigned short;
-INT INT_INF = UINT16_MAX;
+using INT = int;
+INT INT_INF = INT16_MAX;
 
 class Machine
 {
 	INT L = 0;		// Indicator
 	vector<INT> B;  // Buttons
 	vector<INT> J;  // Jvoltage
+public:
+	int	MIN_JV = 0;
 public:
 	static Machine ReadMachine(const string& line); // [.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}
 	static INT ReadLights(const string& line); // .##.
@@ -27,42 +30,213 @@ public:
 struct Range
 {
 	INT a, b;
-	static Range Cross(const Range& a, const Range& b)
+	Range(INT a, INT b) : a(a), b(b) {}
+	
+	void Print() const
 	{
-		assert(a.a <= a.b); assert(b.a <= b.b);
-		Range cross = { max(a.a, b.a), min(a.b, b.b) };
-		assert(cross.a <= cross.b);
-		return cross;
+		if (b < a) cout << " O ";
+		else cout << " [" << a << ".." << b << "] ";
+	}
+	void Cross(const Range& rhs) 
+	{ 
+		a = max(a, rhs.a); 
+		b = min(b, rhs.b); 
 	}
 };
 
-class Junit
+class ROW : public vector<INT>
 {
-	INT S; // sum of 0*x0 + 1*x1 + ...
-	vector<INT> J; // 0 1 1 0
 public:
-	Junit(INT S, const vector<INT> J) : S(S), J(J) {}
-	bool operator==(const Junit& JU) const 
+	ROW(INT S, const vector<INT> J) 
 	{
-		if (S != JU.S) return false;
-		for (int i = 0; i < J.size(); ++i) if (J[i] != JU.J[i]) return false;
-		return true; 
+		this->resize( J.size() + 1 ); // matrix row + value.
+		int i = 0;
+		while (i < J.size()) { this->operator[](i) = J[i]; ++i; }
+		this->operator[](i) = S;
 	}
-	vector<Range> GetRanges() const
+	ROW& operator+=(const ROW& rhs)
 	{
-		int rang = 0; for (const auto& r : J) if (r == 1) ++rang;
-		vector<Range> ranges(J.size(), Range{0, INT_INF});
-		for (int i = 0; i < J.size(); ++i) 
-			if (J[i] == 1) 
-				ranges[i] = ( rang == 1 ? Range{ S, S} : Range{ 0, S } );
-		return ranges;
+		assert(size() == rhs.size());
+		for (int i = 0; i < size(); ++i) this->operator[](i) += rhs[i];
+		return *this;
 	}
-	int VariablesCount() const { return (int)J.size(); }
+	ROW& operator-=(const ROW& rhs)
+	{
+		assert(size() == rhs.size());
+		for (int i = 0; i < size(); ++i) this->operator[](i) -= rhs[i];
+		return *this;
+	}
+	ROW& operator*(INT k)
+	{
+		for (auto& v : *this) v *= k;
+		return *this;
+	}
+	bool IsZero() const 
+	{
+		bool zero = true;
+		for (auto v : *this) if (v != 0) { zero = false; break; }
+		return zero;
+	}
+	void Print()
+	{
+		for (auto v : *this) cout << setw(6) << v; cout << endl;
+	}
+	bool Solved() const
+	{
+		bool solved = true;
+		for (int i = 0; i < size() - 1; ++i) if ((*this)[i] != 1) { solved = false; break; }
+		return solved;
+	}
+	Range GetRange(int i) const
+	{
+		bool positive = true;
+		for (INT v : *this) if (v < 0) { positive = false; break; }
+		INT v = (*this)[i], s = back();
+		if (!positive || v == 0) return Range{ 0, INT_INF };
+		return Range{ 0, (INT)((float)s / (float)v) };
+	}
+};
+
+class MATRIX : public vector<ROW>
+{
+public:
+	void Print()
+	{
+		for (const auto& row : *this)
+		{
+			for (const auto& v : row) cout << setw(6) << v;
+			cout << endl;
+		}
+		cout << endl;
+	}
+	void SwapRows(int r0, int r1)
+	{
+		if (r0 == r1) return;
+		std::swap(this->operator[](r0), this->operator[](r1));
+	}
+	void SwapCols(int c0, int c1)
+	{
+		if (c0 == c1) return;
+		for (auto& row : *this) std::swap(row[c0], row[c1]);
+	}
+	int GetR() const { return (int)size(); }
+	int GetC() const { return (int)(*this)[0].size() - 1; }
+	bool SolveFor(int x) // swap rows and add it to make 0 in column c : return false if impossible.
+	{
+		int R = GetR(), C = GetC();
+		
+		if (x >= min(R, C)) return false;
+
+		// search for the first non 0 in (x,x) ... (n,m)
+		int r = x, c = x; bool done = false;
+		for (; r < R; ++r) {
+			for (c = x; c < C; ++c) {
+				done = (abs((*this)[r][c]) == 1);
+				if (done) break;
+			}
+			if (done) break;
+		}
+
+		if (r >= R) 
+		{ 
+			/*Print();*/ 
+			if ((*this)[x][x] < 0) for (auto& v : (*this)[x]) v *= -1;
+			return false; 
+		}
+		assert(r < R);
+		
+		// make [x,x] != 0
+		SwapRows(x, r); SwapCols(x, c);
+		if ((*this)[x][x] < 0) for (auto& v : (*this)[x]) v *= -1;
+
+		//Print();
+
+		// nullify colimn x - solwe for it:
+		for (r = 0; r < size(); ++r) if (r != x && (*this)[r][x] != 0)
+		{
+			ROW row = (*this)[x];
+			if ((*this)[r][x] > 0)
+				(*this)[r] -= row * abs((*this)[r][x]);
+			if ((*this)[r][x] < 0)
+				(*this)[r] += row * abs((*this)[r][x]);
+			
+			NormalizeRow(r);
+		}
+
+		// remove 0 rows if any
+		erase_if(*this, [](ROW& r) { return r.IsZero(); });
+
+		return true;
+	}
+	void NormalizeRow(int r)
+	{
+		int GCD = 1;
+		for (const auto gcd : (*this)[r])
+		{	
+			if (gcd != 0)
+			{
+				bool isGCD = true;
+				for (const auto v : (*this)[r]) if (v % gcd != 0) { isGCD = false; break; }
+				if (isGCD) GCD = max(GCD, abs(gcd));
+			}
+		}
+		if (GCD != 1) for (auto& v : (*this)[r]) v /= GCD;
+
+		bool all_negative = true;
+		for (auto v : (*this)[r]) if (v > 0) { all_negative = false; break; }
+		if (all_negative) (*this)[r] = (*this)[r] * -1;
+	}
+	INT MaxS() const 
+	{
+		INT max_s = (*this)[0].back();
+		for (const auto& r : *this) max_s = max(max_s, (INT)abs(r.back()));
+		return max_s;
+	}
+	int Solution(vector<INT> X)
+	{
+		// Test last row coof: 
+		const ROW& last = back();
+		if (last[size() - 1] != 1)
+		{
+			INT last_x = last.back();
+			int x_idx = min(GetR(), GetC());
+			for (int di = x_idx; di < GetC(); ++di)
+			{
+				last_x -= last[di] * X[di - x_idx];
+			}
+			// must be integer
+			if (last_x % last[size() - 1] != 0) return -1; // incompatible
+			if (last_x / last[size() - 1] < 0 ) return -1; // incompatible
+
+			vector<INT> _X{ last_x / last[size() - 1] };
+			for (const auto& x : X) _X.push_back(x);
+			return SolutionCalc(_X, true);
+		}
+		return SolutionCalc(X, false);
+	}
+	int SolutionCalc(vector<INT> X, bool skip_last)
+	{
+		int SUM = 0;
+		for (const auto& x : X) SUM += x;
+		int x_idx = min(GetR(), GetC()) + (skip_last ? -1 : 0);
+		for (int r = 0; r < size(); ++r)
+		{
+			if (skip_last && r == size() - 1) break;
+			ROW& row = (*this)[r];
+			int xv = row.back();
+			for (int di = x_idx; di < GetC(); ++di) xv -= row[di] * X[di - x_idx];
+			if (xv < 0) return -1;
+			SUM += xv;
+		}
+		return SUM;
+	}
+
+	INT Value(int xi) const { return (*this)[xi][xi]; }
 };
 
 class Jvoltage
 {
-	vector<Junit> R;
+	MATRIX M;
 public:
 	// [B0(Jn-1, ..., J0),..., Bn-1(Jn-1,...,J0)] [S0,...,Sn-1]
 	Jvoltage(const vector<INT>& B, const vector<INT>& S)
@@ -76,31 +250,85 @@ public:
 			{
 				if (B[b] & i) r[b] = 1;
 			}
-			Junit junit(s, r);
+			ROW junit(s, r);
 			bool add = true;
-			for (const Junit& ju : R) if (ju == junit) { add = false; break; }
-			if (add) R.push_back(junit);
+			for (const ROW& ju : M) if (ju == junit) { add = false; break; }
+			if (add) M.push_back(junit);
 		}
 	}
 
-	void Solve()
+	int Solve()
 	{
-		vector<Range> BOUNDS = R[0].GetRanges();
-		for (const Junit& ju : R)
+		bool solved = false;
+		static int ID = 0;
+		//M.Print();
+		int solutions = min(M.GetR(), M.GetC());
+		for (int x = 0; x < solutions; ++x)
 		{
-			vector<Range> bounds = ju.GetRanges();
-			for (int i = 0; i < BOUNDS.size(); ++i) BOUNDS[i] = Range::Cross(BOUNDS[i], bounds[i]);
+			solved = M.SolveFor(x);
+		}
+		//M.Print();
+		ROW SUM = M[0];
+		for (int i = 1; i < M.size(); ++i) SUM += M[i];
+
+		//assert(SUM.Solved() == solved);
+		if (!SUM.Solved())
+		{
+			//M.Print(); cout << endl;
+			int variables = M.GetC() - min(M.GetR(), M.GetC());
+			//cout << "Variables : " << variables << endl;
+			int MAX_I = 200;
+			if (variables == 1)
+			{
+				int min_sum = INT_MAX;
+				for (int x = 0; x < MAX_I; ++x)
+				{
+					int sum = M.Solution({ x });
+					if (sum >= 0) min_sum = min(sum, min_sum);
+				}
+				cout << ++ID << " MIN SUM : " << min_sum << endl;
+				assert(min_sum > 0);
+				if (min_sum == INT_MAX) { M.Print(); cout << endl; }
+				return min_sum;
+			} 
+			else if (variables == 2)
+			{
+				int min_sum = INT_MAX;
+				for (int x0 = 0; x0 < MAX_I; ++x0) 
+				for (int x1 = 0; x1 < MAX_I; ++x1)
+				{
+					int sum = M.Solution({ x0, x1 });
+					if (sum >= 0) min_sum = min(sum, min_sum);
+				}
+				cout << ++ID << " MIN SUM : " << min_sum << endl;
+				assert(min_sum > 0);
+				if (min_sum == INT_MAX) { M.Print(); cout << endl; }
+				return min_sum;
+			}
+			else if (variables == 3)
+			{
+				int min_sum = INT_MAX;
+				for (int x0 = 0; x0 < MAX_I; ++x0) 
+				for (int x1 = 0; x1 < MAX_I; ++x1) 
+				for (int x2 = 0; x2 < MAX_I; ++x2)
+				{
+					int sum = M.Solution({ x0, x1, x2 });
+					if (sum >= 0) min_sum = min(sum, min_sum);
+				}
+				cout << ++ID << " MIN SUM : " << min_sum << endl;
+				assert(min_sum > 0);
+				if (min_sum == INT_MAX) { M.Print(); cout << endl; }
+				return min_sum;
+			}
+
+		}
+		else
+		{
+			cout << ++ID << " MIN SUM : " << SUM.back() << endl;
+			return SUM.back();
 		}
 
-		long long int N = 1;
-		for (const Range& r : BOUNDS)
-		{
-			assert(r.b != INT_INF);
-			N *= r.b - r.a + 1;
-		}
-		string solution = (R.size() >= R[0].VariablesCount() ? "SOLVE  " : "ITERATE");
-		cout << solution << " - Irterations : " << N;
-		cout << "  EQUATIONS: " << R.size() << "  VARIABLES: " << R[0].VariablesCount() << endl;
+		return 0;
 	}
 };
 
@@ -225,7 +453,7 @@ Machine Machine::ReadMachine(const string& line)
 
 	// [B0(Jn-1, ..., J0),..., Bn-1(Jn-1,...,J0)] [S0,...,Sn-1]
 	Jvoltage jv(m.B, m.J); 
-	jv.Solve();
+	m.MIN_JV += jv.Solve();
 
 	return m;
 }
@@ -236,6 +464,7 @@ void Factory::ReadFactory(const char* file)
 	if (puzzle.is_open())
 	{
 		int max_buttons = 0;
+		int min_buttons = 0;
 		string line;
 		while (getline(puzzle, line))
 		{
@@ -244,8 +473,10 @@ void Factory::ReadFactory(const char* file)
 			INT sum = m.MinCombination();
 			// cout << "MIN Buttons : " << sum << endl;
 			SUM += sum;
+			min_buttons += m.MIN_JV;
 		}
 		puzzle.close();
 		cout << "Max buttons : " << max_buttons << endl;
+		cout << "MIN JVOLAGE : " << min_buttons << endl;
 	}
 }
