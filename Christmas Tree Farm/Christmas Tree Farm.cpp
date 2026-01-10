@@ -4,6 +4,7 @@
 #include <array>
 #include <vector>
 #include <numeric>
+#include <chrono>
 
 using namespace std;
 
@@ -46,9 +47,16 @@ private:
 
 int main(int argc, char* argv[])
 {
+    auto start = chrono::high_resolution_clock::now();
+
 	Puzzle puzzle;
     puzzle.ReadPuzzle(argv[1]);
 	puzzle.PrintInformation();
+
+    auto end = chrono::high_resolution_clock::now();
+    chrono::duration<double, std::milli> duration = end - start;
+    std::cout << "Execution time: " << duration.count() << " milliseconds" << std::endl;
+
 	return 0;
 }
 
