@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+flawfinder.exe
+sonar-project.properties
+.scannerwork/.sonar_lock
+.vscode/settings.json

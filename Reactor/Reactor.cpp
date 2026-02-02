@@ -159,6 +159,12 @@ int main(int argc, char* argv[])
 {
     auto start = std::chrono::high_resolution_clock::now();
 
+    if (argc < 2) 
+    {
+        cout << "Fail: Spesify puzzle source fiel. \n";
+        return 0;
+    }
+
     SolutionPart1 sol1(argv[1]);
     sol1.InitSolution();
     sol1.SolutionPart2("svr", "out");
